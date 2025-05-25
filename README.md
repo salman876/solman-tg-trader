@@ -15,7 +15,6 @@ pip install -r requirements.txt
 
 ## Configure environment
 cp .env.example .env
-# Edit .env with your settings
 
 ## Run the bot
 python main.py
