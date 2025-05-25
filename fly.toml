@@ -1,0 +1,16 @@
+app = "solman-tg-trader"
+primary_region = 'ams'
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  bot = "python main.py"
+
+[[vm]]
+  memory = '2gb'
+  size = 'performance-1x'
+
+[scaling]
+  min_machines_running = 1
+  max_machines_count = 1
