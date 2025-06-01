@@ -27,7 +27,7 @@ class Settings:
     API_TIMEOUT: int = field(default_factory=lambda: int(os.getenv("API_TIMEOUT", "30")))
     
     # Authentication
-    OWNER_USER_ID: int = field(default_factory=lambda: int(os.getenv("OWNER_USER_ID", "0")))
+    OWNER_USER_ID: int = field(default_factory=lambda: int(os.getenv("OWNER_USER_ID", "0").split("#")[0].strip()))
     AUTHORIZED_USERS: Set[int] = field(default_factory=set)
     
 

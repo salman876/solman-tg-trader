@@ -121,15 +121,7 @@ class APIClient:
                 
                 if response.status == 200 and result.get("success"):
                     logger.info(f"Purchase successful for token {token_address}")
-                    return {
-                        "success": True,
-                        "data": {
-                            "tx_hash": result.get("transaction_signature"),
-                            "amount": result.get("sol_amount"),
-                            "message": result.get("message"),
-                            "slippage": result.get("slippage_percent")
-                        }
-                    }
+                    return result
                 else:
                     error_msg = result.get("message", f"HTTP {response.status}")
                     logger.error(f"Purchase failed: {error_msg}")
@@ -179,7 +171,9 @@ class APIClient:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    positions = data.get("positions", [])
+                    # Convert active_trades object to list format
+                    active_trades = data.get("active_trades", {})
+                    positions = list(active_trades.values()) if active_trades else []
                     logger.info(f"Retrieved {len(positions)} positions")
                     return {
                         "success": True,
@@ -244,14 +238,7 @@ class APIClient:
                 
                 if response.status == 200 and result.get("success"):
                     logger.info(f"Sell successful for token {token_mint}")
-                    return {
-                        "success": True,
-                        "data": {
-                            "tx_hash": result.get("transaction_signature"),
-                            "message": result.get("message"),
-                            "token_mint": result.get("token_mint")
-                        }
-                    }
+                    return result
                 else:
                     error_msg = result.get("message", f"HTTP {response.status}")
                     logger.error(f"Sell failed: {error_msg}")
