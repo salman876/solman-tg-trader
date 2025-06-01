@@ -57,8 +57,8 @@ class MessageHandlers(BaseHandler):
         """Process a single token purchase."""
         # Send initial notification
         status_msg = await message.reply_text(
-            f"🔍 **Token Detected!**\n"
-            f"Address: `{address}`\n"
+            f"🔍 *Token Detected!*\n"
+            f"*Address:* `{address}`\n"
             f"🚀 Initiating purchase...",
             parse_mode="Markdown",
             reply_to_message_id=message.message_id
@@ -73,8 +73,11 @@ class MessageHandlers(BaseHandler):
         
         # Update with result
         if result["success"]:
-            tx_hash = result['data'].get('tx_hash', 'N/A')
-            amount = result['data'].get('amount', 'N/A')
+            tx_hash = result.get('signature', 'N/A')
+            token_amount = result.get('token_amount', 0)
+            token_price = result.get('token_price', 0)
+            token_mint = result.get('token_mint', address)
+            slippage = result.get('slippage')
             
             # Create explorer link if we have tx hash
             tx_display = tx_hash
@@ -82,18 +85,16 @@ class MessageHandlers(BaseHandler):
                 explorer_link = format_tx_link(tx_hash)
                 tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
             
-            amount = result['data'].get('amount', 'N/A')
-            slippage = result['data'].get('slippage')
-            
             success_msg = (
-                f"✅ **Purchase Successful!**\n"
-                f"Token: `{address}`\n"
-                f"Transaction: {tx_display}\n"
-                f"Amount: {amount} SOL"
+                f"✅ *Purchase Successful!*\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Transaction:* {tx_display}\n"
+                f"*Amount:* {token_amount:,.6f} tokens\n"
+                f"*Price:* {format_price(token_price)}"
             )
             
             if slippage:
-                success_msg += f"\nSlippage: {slippage}%"
+                success_msg += f"\n*Slippage:* {slippage}%"
             
             await status_msg.edit_text(
                 success_msg,
@@ -102,9 +103,9 @@ class MessageHandlers(BaseHandler):
             )
         else:
             await status_msg.edit_text(
-                f"❌ **Purchase Failed!**\n"
-                f"Token: `{address}`\n"
-                f"Error: {result['error']}",
+                f"❌ *Purchase Failed!*\n"
+                f"*Token:* `{address}`\n"
+                f"*Error:* {result['error']}",
                 parse_mode="Markdown"
             )
     
@@ -123,7 +124,7 @@ class MessageHandlers(BaseHandler):
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(
-                "🔒 **Access Denied**\n\n"
+                "🔒 *Access Denied*\n\n"
                 "This bot is private. You can request access from the owner.",
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
@@ -142,23 +143,24 @@ class CommandHandlers(BaseHandler):
             return
         
         welcome_message = (
-            "👋 **Welcome to Solana Token Auto-Buy Bot!**\n\n"
+            "👋 *Welcome to Solana Token Auto-Buy Bot!*\n\n"
             "Simply paste any Solana token address and I'll automatically "
             "initiate a purchase for you.\n\n"
-            "**Features:**\n"
-            "• Automatic token detection\n"
-            "• Instant purchase execution\n"
-            "• Whitelist-based security\n\n"
-            "**Commands:**\n"
+            "*Features:*\n"
+            "• *Automatic token detection*\n"
+            "• *Instant purchase execution*\n"
+            "• *Whitelist-based security*\n\n"
+            "*Commands:*\n"
             "/start - Show this message\n"
             "/help - Get help\n"
             "/status - Check bot status\n"
+            "/positions - View current positions\n"
+            "/sell - Sell a position\n"
         )
         
         if self.auth.is_owner(user_id):
             welcome_message += "/admin - Admin panel\n"
         
-        welcome_message += "/positions - View current positions\n"
         welcome_message += "\nJust paste a token address to get started! 🚀"
         
         await update.message.reply_text(welcome_message, parse_mode="Markdown")
@@ -170,15 +172,18 @@ class CommandHandlers(BaseHandler):
             return
         
         help_message = (
-            "ℹ️ **How to use this bot:**\n\n"
+            "ℹ️ *How to use this bot:*\n\n"
             "1. Copy any Solana token address\n"
             "2. Paste it in this chat\n"
             "3. The bot will automatically detect and purchase it\n\n"
-            "**Valid Address Format:**\n"
+            "*Valid Address Format:*\n"
             f"• {settings.MIN_TOKEN_LENGTH}-{settings.MAX_TOKEN_LENGTH} characters long\n"
             "• Base58 encoded (no 0, O, I, or l)\n"
             "• Example: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`\n\n"
-            "**Need help?** Contact the bot owner."
+            "*Commands:*\n"
+            "• `/positions` - View your current positions\n"
+            "• `/sell TOKEN` - Sell a specific position\n\n"
+            "*Need help?* Contact the bot owner."
         )
         
         await update.message.reply_text(help_message, parse_mode="Markdown")
@@ -200,7 +205,7 @@ class CommandHandlers(BaseHandler):
             api_status = f"🟡 {api_health['status']}"
         
         status_message = (
-            "📊 **Bot Status**\n\n"
+            "📊 *Bot Status*\n\n"
             f"Bot: 🟢 Online\n"
             f"API Server: {api_status}\n"
             f"Endpoint: `{settings.API_BASE_URL}`\n"
@@ -227,7 +232,7 @@ class CommandHandlers(BaseHandler):
         stats = self.auth.get_stats()
         
         await update.message.reply_text(
-            f"🔧 **Admin Panel**\n\n"
+            f"🔧 *Admin Panel*\n\n"
             f"Authorized Users: {stats['authorized_users']}\n"
             f"Pending Requests: {stats['pending_requests']}\n\n"
             f"Select an option:",
@@ -249,7 +254,7 @@ class CommandHandlers(BaseHandler):
         
         if not result["success"]:
             await loading_msg.edit_text(
-                f"❌ Failed to fetch positions: No positions found.",
+                f"❌ Failed to fetch positions: {result.get('error', 'Unknown error')}",
                 parse_mode="Markdown"
             )
             return
@@ -264,51 +269,51 @@ class CommandHandlers(BaseHandler):
             return
         
         # Format positions message
-        message = "📊 **Current Positions**\n\n"
+        message = "📊 *Current Positions*\n\n"
         
         for i, pos in enumerate(positions, 1):
             token_mint = pos.get("token_mint", "Unknown")
-            token_amount = pos.get("token_amount", 0)
-            buy_price = pos.get("buy_price", 0)
-            current_price = pos.get("current_price", 0)
-            pnl_percent = pos.get("pnl_percent", 0)
-            pnl_sol = pos.get("pnl_sol", 0)
-            highest_pnl = pos.get("highest_pnl", 0)
+            current_pnl = pos.get("current_pnl", 0)
+            current_pnl_percent = pos.get("current_pnl_percent", 0)
+            highest_pnl_percent = pos.get("highest_pnl_percent", 0)
             hold_duration = pos.get("hold_duration", "Unknown")
-            is_active = pos.get("is_active", True)
+            signature = pos.get("signature", "")
             
             # Format PnL with color indicator
-            if pnl_percent > 0:
+            if current_pnl_percent > 0:
                 pnl_emoji = "🟢"
                 pnl_sign = "+"
-            elif pnl_percent < 0:
+            elif current_pnl_percent < 0:
                 pnl_emoji = "🔴"
                 pnl_sign = ""
             else:
                 pnl_emoji = "⚪"
                 pnl_sign = ""
             
-            # Status emoji
-            status_emoji = "✅" if is_active else "⏸️"
+            # Create explorer link for buy transaction
+            tx_display = ""
+            if signature:
+                explorer_link = format_tx_link(signature)
+                tx_display = f"├ Buy TX: [{truncate_address(signature)}]({explorer_link})\n"
             
             message += (
-                f"**{i}. {token_mint}** {status_emoji}\n"
-                f"├ Buy Price: {format_price(buy_price)}\n"
-                f"├ Current Price: {format_price(current_price)}\n"
-                f"├ PnL: {pnl_emoji} {pnl_sign}{pnl_percent:.2f}% ({pnl_sign}{pnl_sol:.6f} SOL)\n"
-                f"├ Peak PnL: {highest_pnl:.2f}%\n"
-                f"└ Duration: {format_duration(hold_duration)}\n"
+                f"*{i}. {truncate_address(token_mint)}*\n"
+                f"├ Token: `{token_mint}`\n"
+                f"{tx_display}"
+                f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percent:.2f}% ({pnl_sign}{format_price(current_pnl)} SOL)\n"
+                f"├ Peak PnL: {highest_pnl_percent:.2f}%\n"
+                f"├ Duration: {format_duration(hold_duration)}\n"
                 f"└ [photon]({format_photon_link(token_mint)})\n\n"
             )
         
         # Add summary
-        total_pnl_sol = sum(pos.get("pnl_sol", 0) for pos in positions)
-        total_pnl_sign = "+" if total_pnl_sol > 0 else ""
+        total_pnl = sum(pos.get("current_pnl", 0) for pos in positions)
+        total_pnl_sign = "+" if total_pnl > 0 else ""
         
         message += (
-            f"**Summary:**\n"
+            f"*Summary:*\n"
             f"Total Positions: {len(positions)}\n"
-            f"Total PnL: {total_pnl_sign}{total_pnl_sol:.6f} SOL"
+            f"Total PnL: {total_pnl_sign}{format_price(total_pnl)} SOL"
         )
         
         await loading_msg.edit_text(message, parse_mode="Markdown", disable_web_page_preview=True)
@@ -320,42 +325,12 @@ class CommandHandlers(BaseHandler):
             return
         
         # Check if token address was provided
-        if not context.args:
-            # If no token provided, show positions with instructions
-            positions_result = await self.api.get_positions()
-            
-            if not positions_result["success"]:
-                await update.message.reply_text(
-                    f"❌ Failed to fetch positions: {positions_result['error']}",
-                    parse_mode="Markdown"
-                )
-                return
-            
-            positions = positions_result.get("positions", [])
-            
-            if not positions:
-                await update.message.reply_text(
-                    "📭 No active positions to sell.\n\n"
-                    "Usage: `/sell_position TOKEN_MINT`",
-                    parse_mode="Markdown"
-                )
-                return
-            
-            # Show positions with instruction
-            message = "📊 **Active Positions**\n\n"
-            for i, pos in enumerate(positions, 1):
-                token_mint = pos.get("token_mint", "Unknown")
-                pnl_percent = pos.get("pnl_percent", 0)
-                pnl_emoji = "🟢" if pnl_percent > 0 else "🔴" if pnl_percent < 0 else "⚪"
-                
-                message += f"{i}. `{token_mint}`\n"
-                message += f"   PnL: {pnl_emoji} {pnl_percent:+.2f}%\n\n"
-            
-            message += (
-                "**To sell a position, use:**\n"
-                "`/sell_position TOKEN_MINT`\n\n"
+        if not context.args:  
+            message = (
+                "*To sell a position, use:*\n"
+                "`/sell TOKEN_MINT`\n\n"
                 "Example:\n"
-                f"`/sell_position {positions[0].get('token_mint', '')}`"
+                f"`/sell 35cNWuWpRkTNAG2KiZDjhpi6QJr92Y3U8Ac6vShZpump`"
             )
             
             await update.message.reply_text(message, parse_mode="Markdown")
@@ -375,7 +350,7 @@ class CommandHandlers(BaseHandler):
         
         # Send confirmation message
         status_msg = await update.message.reply_text(
-            f"🔄 **Selling Position**\n"
+            f"🔄 *Selling Position*\n"
             f"Token: `{token_mint}`\n"
             f"Processing...",
             parse_mode="Markdown"
@@ -385,7 +360,7 @@ class CommandHandlers(BaseHandler):
         result = await self.api.sell_position(token_mint)
         
         if result["success"]:
-            tx_hash = result['data'].get('tx_hash', 'N/A')
+            tx_hash = result.get('signature', 'N/A')
             
             # Create explorer link
             tx_display = tx_hash
@@ -394,17 +369,17 @@ class CommandHandlers(BaseHandler):
                 tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
             
             await status_msg.edit_text(
-                f"✅ **{result['data'].get('message', 'Position sold successfully')}**\n\n"
-                f"Token: `{token_mint}`\n"
-                f"Transaction: {tx_display}",
+                f"✅ *Position sold successfully*\n\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Transaction:* {tx_display}",
                 parse_mode="Markdown",
                 disable_web_page_preview=True
             )
         else:
             await status_msg.edit_text(
-                f"❌ **Sell Failed!**\n\n"
-                f"Token: `{token_mint}`\n"
-                f"Error: {result['error']}",
+                f"❌ *Sell Failed!*\n\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Error:* {result['error']}",
                 parse_mode="Markdown"
             )
 
@@ -440,10 +415,10 @@ class CallbackHandlers(BaseHandler):
             
             await context.bot.send_message(
                 chat_id=settings.OWNER_USER_ID,
-                text=f"🔔 **Access Request**\n\n"
-                     f"User: @{username}\n"
-                     f"ID: `{user_id}`\n"
-                     f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                text=f"🔔 *Access Request*\n\n"
+                     f"*User:* @{username}\n"
+                     f"*ID:* `{user_id}`\n"
+                     f"*Time:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
@@ -476,7 +451,7 @@ class CallbackHandlers(BaseHandler):
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text="✅ **Access Granted!**\n\n"
+                    text="✅ *Access Granted!*\n\n"
                          "The owner has approved your request. You can now use the bot.",
                     parse_mode="Markdown"
                 )
@@ -508,7 +483,7 @@ class CallbackHandlers(BaseHandler):
         if query.data == "admin_list_users":
             users_list = "\n".join([f"• `{user_id}`" for user_id in self.auth.authenticated_users])
             await query.edit_message_text(
-                f"👥 **Authorized Users:**\n\n{users_list or 'No users authorized'}",
+                f"👥 *Authorized Users:*\n\n{users_list or 'No users authorized'}",
                 parse_mode="Markdown"
             )
         
@@ -516,7 +491,7 @@ class CallbackHandlers(BaseHandler):
             stats = self.auth.get_stats()
             
             await query.edit_message_text(
-                f"📊 **Bot Statistics**\n\n"
+                f"📊 *Bot Statistics*\n\n"
                 f"Authorized Users: {stats['authorized_users']}\n"
                 f"Pending Requests: {stats['pending_requests']}\n"
                 f"Owner ID: `{stats['owner_id']}`\n"
@@ -536,7 +511,7 @@ class CallbackHandlers(BaseHandler):
             stats = self.auth.get_stats()
             
             await query.edit_message_text(
-                f"🔧 **Admin Panel** *(Updated)*\n\n"
+                f"🔧 *Admin Panel* *(Updated)*\n\n"
                 f"Authorized Users: {stats['authorized_users']}\n"
                 f"Pending Requests: {stats['pending_requests']}\n\n"
                 f"Select an option:",
