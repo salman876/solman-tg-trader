@@ -216,3 +216,37 @@ def escape_markdown(text: str) -> str:
         text = text.replace(char, f'\\{char}')
     
     return text
+
+def split_message(text: str, max_length: int = 4000) -> List[str]:
+    """
+    Split a long message into chunks that fit within Telegram's message limit.
+    
+    Args:
+        text: The message text to split
+        max_length: Maximum length per message (default 4000 to leave buffer)
+        
+    Returns:
+        List of message chunks
+    """
+    if len(text) <= max_length:
+        return [text]
+    
+    chunks = []
+    lines = text.split('\n')
+    current_chunk = ""
+    
+    for line in lines:
+        # If adding this line would exceed the limit
+        if len(current_chunk) + len(line) + 1 > max_length:
+            # Save current chunk if it has content
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+            current_chunk = line + '\n'
+        else:
+            current_chunk += line + '\n'
+    
+    # Add the last chunk
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+    
+    return chunks

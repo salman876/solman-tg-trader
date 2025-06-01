@@ -22,7 +22,7 @@ class SolanaTelegramBot:
         self.api_client = APIClient()
         self.message_handlers = MessageHandlers(self.auth_manager, self.api_client)
         self.command_handlers = CommandHandlers(self.auth_manager, self.api_client)
-        self.callback_handlers = CallbackHandlers(self.auth_manager)
+        self.callback_handlers = CallbackHandlers(self.auth_manager, self.api_client)
         
         # Create application
         self.app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
@@ -62,6 +62,18 @@ class SolanaTelegramBot:
         self.app.add_handler(CallbackQueryHandler(
             self.callback_handlers.handle_admin_callback,
             pattern="^admin_"
+        ))
+        
+        # Positions pagination handler
+        self.app.add_handler(CallbackQueryHandler(
+            self.command_handlers.handle_positions,
+            pattern="^positions_"
+        ))
+        
+        # Sell position handler
+        self.app.add_handler(CallbackQueryHandler(
+            self.callback_handlers.handle_sell_callback,
+            pattern="^sell_"
         ))
         
         logger.info("All handlers registered successfully")
