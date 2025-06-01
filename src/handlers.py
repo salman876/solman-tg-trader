@@ -5,11 +5,12 @@ import logging
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+import asyncio
 
 from config.settings import settings
 from .auth import AuthManager
 from .api_client import APIClient
-from .utils import SolanaAddressValidator, truncate_address, format_tx_link, format_photon_link, format_duration, format_price
+from .utils import SolanaAddressValidator, truncate_address, format_tx_link, format_photon_link, format_duration, format_price, split_message
 
 
 logger = logging.getLogger(__name__)
@@ -64,12 +65,39 @@ class MessageHandlers(BaseHandler):
             reply_to_message_id=message.message_id
         )
         
-        # Make the purchase
-        result = await self.api.buy_token(
-            token_address=address,
-            user_id=user_id,
-            username=username
-        )
+        # Retry logic
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            # Update status if retrying
+            if attempt > 0:
+                await status_msg.edit_text(
+                    f"🔍 *Token Detected!*\n"
+                    f"*Address:* `{address}`\n"
+                    f"🔄 Retrying purchase... (Attempt {attempt + 1}/{max_retries})",
+                    parse_mode="Markdown"
+                )
+                # Wait before retry
+                await asyncio.sleep(retry_delay)
+            
+            # Make the purchase
+            result = await self.api.buy_token(
+                token_address=address,
+                user_id=user_id,
+                username=username
+            )
+            
+            # If successful, break out of retry loop
+            if result["success"]:
+                break
+                
+            # If this is the last attempt, continue to show error
+            if attempt == max_retries - 1:
+                break
+                
+            # Log retry attempt
+            logger.warning(f"Purchase attempt {attempt + 1} failed for {address}: {result.get('error', 'Unknown error')}")
         
         # Update with result
         if result["success"]:
@@ -246,8 +274,29 @@ class CommandHandlers(BaseHandler):
             await MessageHandlers(self.auth)._send_unauthorized_message(update)
             return
         
-        # Send loading message
-        loading_msg = await update.message.reply_text("📊 Fetching positions...")
+        # Check if this is a callback query (for pagination)
+        page = 1
+        is_callback = False
+        
+        if hasattr(update, 'callback_query') and update.callback_query:
+            is_callback = True
+            query = update.callback_query
+            # Extract page number from callback data
+            if query.data.startswith("positions_page_"):
+                # Check if it's a refresh request
+                if "_refresh" in query.data:
+                    page = int(query.data.split("_")[2])
+                else:
+                    page = int(query.data.split("_")[-1])
+            elif query.data == "positions_current":
+                # Just answer the callback, don't update anything
+                await query.answer("Current page")
+                return
+            await query.answer()
+            loading_msg = query.message
+        else:
+            # Send loading message
+            loading_msg = await update.message.reply_text("📊 Fetching positions...")
         
         # Get positions from API
         result = await self.api.get_positions()
@@ -268,10 +317,25 @@ class CommandHandlers(BaseHandler):
             )
             return
         
-        # Format positions message
-        message = "📊 *Current Positions*\n\n"
+        # Sort positions by current PnL percentage (highest first)
+        positions.sort(key=lambda x: x.get("current_pnl_percent", 0), reverse=True)
         
-        for i, pos in enumerate(positions, 1):
+        # Pagination settings
+        positions_per_page = 5
+        total_positions = len(positions)
+        total_pages = (total_positions + positions_per_page - 1) // positions_per_page
+        
+        # Calculate start and end indices for current page
+        start_idx = (page - 1) * positions_per_page
+        end_idx = min(start_idx + positions_per_page, total_positions)
+        
+        # Format positions message for current page
+        message = f"📊 *Current Positions* (Page {page}/{total_pages})\n\n"
+        
+        # Create position buttons list to add sell buttons
+        position_buttons = []
+        
+        for i, pos in enumerate(positions[start_idx:end_idx], start_idx + 1):
             token_mint = pos.get("token_mint", "Unknown")
             current_pnl = pos.get("current_pnl", 0)
             current_pnl_percent = pos.get("current_pnl_percent", 0)
@@ -302,9 +366,20 @@ class CommandHandlers(BaseHandler):
                 f"{tx_display}"
                 f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percent:.2f}% ({pnl_sign}{format_price(current_pnl)} SOL)\n"
                 f"├ Peak PnL: {highest_pnl_percent:.2f}%\n"
-                f"├ Duration: {format_duration(hold_duration)}\n"
-                f"└ [photon]({format_photon_link(token_mint)})\n\n"
+                f"└ Duration: {format_duration(hold_duration)}\n\n"
             )
+            
+            # Add sell button for this position
+            position_buttons.append([
+                InlineKeyboardButton(
+                    f"📤 Sell #{i}", 
+                    callback_data=f"sell_{token_mint}"
+                ),
+                InlineKeyboardButton(
+                    f"📊 Photon #{i}", 
+                    url=format_photon_link(token_mint)
+                )
+            ])
         
         # Add summary
         total_pnl = sum(pos.get("current_pnl", 0) for pos in positions)
@@ -312,11 +387,55 @@ class CommandHandlers(BaseHandler):
         
         message += (
             f"*Summary:*\n"
-            f"Total Positions: {len(positions)}\n"
+            f"Total Positions: {total_positions}\n"
             f"Total PnL: {total_pnl_sign}{format_price(total_pnl)} SOL"
         )
         
-        await loading_msg.edit_text(message, parse_mode="Markdown", disable_web_page_preview=True)
+        # Create pagination keyboard
+        keyboard = []
+        
+        # Add position buttons
+        keyboard.extend(position_buttons)
+        
+        # Add separator if there are positions
+        if position_buttons:
+            keyboard.append([])  # Empty row as separator
+        
+        nav_buttons = []
+        
+        # Previous button
+        if page > 1:
+            nav_buttons.append(
+                InlineKeyboardButton("◀️ Previous", callback_data=f"positions_page_{page-1}")
+            )
+        
+        # Page indicator
+        nav_buttons.append(
+            InlineKeyboardButton(f"{page}/{total_pages}", callback_data="positions_current")
+        )
+        
+        # Next button
+        if page < total_pages:
+            nav_buttons.append(
+                InlineKeyboardButton("Next ▶️", callback_data=f"positions_page_{page+1}")
+            )
+        
+        if nav_buttons:
+            keyboard.append(nav_buttons)
+        
+        # Refresh button
+        keyboard.append([
+            InlineKeyboardButton("🔄 Refresh", callback_data=f"positions_page_{page}_refresh")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        
+        await loading_msg.edit_text(
+            message, 
+            parse_mode="Markdown", 
+            disable_web_page_preview=True,
+            reply_markup=reply_markup
+        )
     
     async def handle_sell_position(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /sell_position command."""
@@ -386,6 +505,58 @@ class CommandHandlers(BaseHandler):
 
 class CallbackHandlers(BaseHandler):
     """Handles callback queries from inline keyboards."""
+    
+    async def handle_sell_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle sell button callbacks from positions list."""
+        query = update.callback_query
+        await query.answer()
+        
+        # Extract token mint from callback data
+        if not query.data.startswith("sell_"):
+            return
+            
+        token_mint = query.data[5:]  # Remove "sell_" prefix
+        
+        # Check authorization
+        if not self.auth.is_authorized(query.from_user.id):
+            await query.answer("Unauthorized", show_alert=True)
+            return
+        
+        # Send confirmation message
+        await query.message.reply_text(
+            f"🔄 *Selling Position*\n"
+            f"Token: `{token_mint}`\n"
+            f"Processing...",
+            parse_mode="Markdown"
+        )
+        
+        # Execute sell using the API client
+        result = await self.api.sell_position(token_mint)
+        
+        if result["success"]:
+            tx_hash = result.get('signature', 'N/A')
+            
+            # Create explorer link
+            tx_display = tx_hash
+            if tx_hash != 'N/A':
+                explorer_link = format_tx_link(tx_hash)
+                tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
+            
+            await query.message.reply_text(
+                f"✅ *Position sold successfully*\n\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Transaction:* {tx_display}\n\n"
+                f"_Use the 🔄 Refresh button to update the positions list_",
+                parse_mode="Markdown",
+                disable_web_page_preview=True
+            )
+        else:
+            await query.message.reply_text(
+                f"❌ *Sell Failed!*\n\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Error:* {result['error']}",
+                parse_mode="Markdown"
+            )
     
     async def handle_access_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle access request callback."""
