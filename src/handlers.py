@@ -475,8 +475,36 @@ class CommandHandlers(BaseHandler):
             parse_mode="Markdown"
         )
         
-        # Execute sell
-        result = await self.api.sell_position(token_mint)
+        # Retry logic
+        max_retries = 3
+        retry_delay = 1  # seconds
+        result = None
+        
+        for attempt in range(max_retries):
+            # Update status if retrying
+            if attempt > 0:
+                await status_msg.edit_text(
+                    f"🔄 *Selling Position*\n"
+                    f"Token: `{token_mint}`\n"
+                    f"Retrying... (Attempt {attempt + 1}/{max_retries})",
+                    parse_mode="Markdown"
+                )
+                # Wait before retry
+                await asyncio.sleep(retry_delay)
+            
+            # Execute sell
+            result = await self.api.sell_position(token_mint)
+            
+            # If successful, break out of retry loop
+            if result["success"]:
+                break
+                
+            # If this is the last attempt, continue to show error
+            if attempt == max_retries - 1:
+                break
+                
+            # Log retry attempt
+            logger.warning(f"Sell attempt {attempt + 1} failed for {token_mint}: {result.get('error', 'Unknown error')}")
         
         if result["success"]:
             tx_hash = result.get('signature', 'N/A')
@@ -490,7 +518,8 @@ class CommandHandlers(BaseHandler):
             await status_msg.edit_text(
                 f"✅ *Position sold successfully*\n\n"
                 f"*Token:* `{token_mint}`\n"
-                f"*Transaction:* {tx_display}",
+                f"*Transaction:* {tx_display}\n\n"
+                f"_Use the 🔄 Refresh button to update the positions list_",
                 parse_mode="Markdown",
                 disable_web_page_preview=True
             )
@@ -523,15 +552,43 @@ class CallbackHandlers(BaseHandler):
             return
         
         # Send confirmation message
-        await query.message.reply_text(
+        status_msg = await query.message.reply_text(
             f"🔄 *Selling Position*\n"
             f"Token: `{token_mint}`\n"
             f"Processing...",
             parse_mode="Markdown"
         )
         
-        # Execute sell using the API client
-        result = await self.api.sell_position(token_mint)
+        # Retry logic
+        max_retries = 3
+        retry_delay = 1  # seconds
+        result = None
+        
+        for attempt in range(max_retries):
+            # Update status if retrying
+            if attempt > 0:
+                await status_msg.edit_text(
+                    f"🔄 *Selling Position*\n"
+                    f"Token: `{token_mint}`\n"
+                    f"Retrying... (Attempt {attempt + 1}/{max_retries})",
+                    parse_mode="Markdown"
+                )
+                # Wait before retry
+                await asyncio.sleep(retry_delay)
+            
+            # Execute sell using the API client
+            result = await self.api.sell_position(token_mint)
+            
+            # If successful, break out of retry loop
+            if result["success"]:
+                break
+                
+            # If this is the last attempt, continue to show error
+            if attempt == max_retries - 1:
+                break
+                
+            # Log retry attempt
+            logger.warning(f"Sell attempt {attempt + 1} failed for {token_mint}: {result.get('error', 'Unknown error')}")
         
         if result["success"]:
             tx_hash = result.get('signature', 'N/A')
@@ -542,7 +599,7 @@ class CallbackHandlers(BaseHandler):
                 explorer_link = format_tx_link(tx_hash)
                 tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
             
-            await query.message.reply_text(
+            await status_msg.edit_text(
                 f"✅ *Position sold successfully*\n\n"
                 f"*Token:* `{token_mint}`\n"
                 f"*Transaction:* {tx_display}\n\n"
@@ -551,7 +608,7 @@ class CallbackHandlers(BaseHandler):
                 disable_web_page_preview=True
             )
         else:
-            await query.message.reply_text(
+            await status_msg.edit_text(
                 f"❌ *Sell Failed!*\n\n"
                 f"*Token:* `{token_mint}`\n"
                 f"*Error:* {result['error']}",
