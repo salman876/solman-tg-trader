@@ -123,7 +123,7 @@ class APIClient:
                     logger.info(f"Purchase successful for token {token_address}")
                     return result
                 else:
-                    error_msg = result.get("message", f"HTTP {response.status}")
+                    error_msg = result.get("error", f"HTTP {response.status}")
                     logger.error(f"Purchase failed: {error_msg}")
                     return {
                         "success": False,
@@ -240,7 +240,7 @@ class APIClient:
                     logger.info(f"Sell successful for token {token_mint}")
                     return result
                 else:
-                    error_msg = result.get("message", f"HTTP {response.status}")
+                    error_msg = result.get("error", f"HTTP {response.status}")
                     logger.error(f"Sell failed: {error_msg}")
                     return {
                         "success": False,
