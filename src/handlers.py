@@ -2,6 +2,7 @@
 Message and command handlers for the bot
 """
 import logging
+import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -342,7 +343,13 @@ class CommandHandlers(BaseHandler):
             hold_duration = "Unknown"
             if trade_time:
                 try:
-                    trade_dt = datetime.fromisoformat(trade_time.replace('Z', '+00:00'))
+                    # Handle high-precision timestamps by truncating to microseconds (6 digits)
+                    # Python datetime can only handle up to 6 digits of precision
+                    
+                    # Find and truncate fractional seconds to 6 digits max
+                    timestamp_cleaned = re.sub(r'\.(\d{6})\d*Z', r'.\1Z', trade_time)
+                    
+                    trade_dt = datetime.fromisoformat(timestamp_cleaned.replace('Z', '+00:00'))
                     now = datetime.now(trade_dt.tzinfo)
                     duration = now - trade_dt
                     # Convert seconds to readable format
@@ -370,7 +377,8 @@ class CommandHandlers(BaseHandler):
                             parts.append(f"{seconds}s")
                         
                         hold_duration = " ".join(parts)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to parse trade_time '{trade_time}': {e}")
                     hold_duration = "Unknown"
             
             # Format PnL with color indicator
