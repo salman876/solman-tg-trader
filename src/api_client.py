@@ -129,19 +129,33 @@ class APIClient:
                 json=payload
             ) as response:
                 if response.status == 200:
-                    response_text = await response.text()
-                    logger.info(f"Purchase request successful for token {token_address}: {response_text}")
+                    data = await response.json()
+                    message = data.get("message", "Token bought successfully")
+                    logger.info(f"Purchase request successful for token {token_address}: {message}")
                     return {
                         "success": True,
-                        "message": response_text
+                        "message": message
                     }
                 else:
-                    logger.error(f"Purchase failed with status {response.status} for token {token_address}")
-                    return {
-                        "success": False,
-                        "error": f"HTTP {response.status}",
-                        "http_status": response.status
-                    }
+                    try:
+                        data = await response.json()
+                        error_message = data.get("message", f"HTTP {response.status}")
+                        error_type = data.get("error", "unknown_error")
+                        logger.error(f"Purchase failed for token {token_address}: {error_type} - {error_message}")
+                        return {
+                            "success": False,
+                            "error": error_message,
+                            "error_type": error_type,
+                            "http_status": response.status
+                        }
+                    except Exception:
+                        # Fallback if response is not JSON
+                        logger.error(f"Purchase failed with status {response.status} for token {token_address}")
+                        return {
+                            "success": False,
+                            "error": f"HTTP {response.status}",
+                            "http_status": response.status
+                        }
                     
         except asyncio.TimeoutError:
             logger.error(f"Purchase request timed out for token {token_address}")
