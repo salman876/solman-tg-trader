@@ -84,6 +84,7 @@ class MessageHandlers(BaseHandler):
             await status_msg.edit_text(
                 f"❌ *An error occurred*\n"
                 f"*Token:* `{address}`",
+                f"*Error:* `{result['error']}`",
                 parse_mode="Markdown"
             )
     
