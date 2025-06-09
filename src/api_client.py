@@ -129,12 +129,11 @@ class APIClient:
                 json=payload
             ) as response:
                 if response.status == 200:
-                    data = await response.json()
-                    message = data.get("message", "Token bought successfully")
-                    logger.info(f"Purchase request successful for token {token_address}: {message}")
+                    response_text = await response.text()
+                    logger.info(f"Purchase request successful for token {token_address}: {response_text}")
                     return {
                         "success": True,
-                        "message": message
+                        "message": response_text
                     }
                 else:
                     try:
