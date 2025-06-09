@@ -65,75 +65,24 @@ class MessageHandlers(BaseHandler):
             reply_to_message_id=message.message_id
         )
         
-        # Retry logic
-        max_retries = 3
-        retry_delay = 1  # seconds
+        # Make the purchase (single attempt, no retry)
+        result = await self.api.buy_token(
+            token_address=address,
+            user_id=user_id,
+            username=username
+        )
         
-        for attempt in range(max_retries):
-            # Update status if retrying
-            if attempt > 0:
-                await status_msg.edit_text(
-                    f"🔍 *Token Detected!*\n"
-                    f"*Address:* `{address}`\n"
-                    f"🔄 Retrying purchase... (Attempt {attempt + 1}/{max_retries})",
-                    parse_mode="Markdown"
-                )
-                # Wait before retry
-                await asyncio.sleep(retry_delay)
-            
-            # Make the purchase
-            result = await self.api.buy_token(
-                token_address=address,
-                user_id=user_id,
-                username=username
-            )
-            
-            # If successful, break out of retry loop
-            if result["success"]:
-                break
-                
-            # If this is the last attempt, continue to show error
-            if attempt == max_retries - 1:
-                break
-                
-            # Log retry attempt
-            logger.warning(f"Purchase attempt {attempt + 1} failed for {address}: {result.get('error', 'Unknown error')}")
-        
-        # Update with result
+        # Update with simplified result
         if result["success"]:
-            tx_hash = result.get('signature', 'N/A')
-            token_amount = result.get('token_amount', 0)
-            token_price = result.get('token_price', 0)
-            token_mint = result.get('token_mint', address)
-            slippage = result.get('slippage')
-            
-            # Create explorer link if we have tx hash
-            tx_display = tx_hash
-            if tx_hash != 'N/A':
-                explorer_link = format_tx_link(tx_hash)
-                tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
-            
-            success_msg = (
-                f"✅ *Purchase Successful!*\n"
-                f"*Token:* `{token_mint}`\n"
-                f"*Transaction:* {tx_display}\n"
-                f"*Amount:* {token_amount:,.6f} tokens\n"
-                f"*Price:* {format_price(token_price)}"
-            )
-            
-            if slippage:
-                success_msg += f"\n*Slippage:* {slippage}%"
-            
             await status_msg.edit_text(
-                success_msg,
-                parse_mode="Markdown",
-                disable_web_page_preview=True
+                f"✅ *Buy request sent*\n"
+                f"*Token:* `{address}`",
+                parse_mode="Markdown"
             )
         else:
             await status_msg.edit_text(
-                f"❌ *Purchase Failed!*\n"
-                f"*Token:* `{address}`\n"
-                f"*Error:* {result['error']}",
+                f"❌ *An error occurred*\n"
+                f"*Token:* `{address}`",
                 parse_mode="Markdown"
             )
     
@@ -227,18 +176,63 @@ class CommandHandlers(BaseHandler):
         
         if api_health["status"] == "healthy":
             api_status = f"🟢 Online ({api_health['response_time']:.2f}s)"
+            
+            # Display tracker status
+            tracker_status = "🟢 Running" if api_health.get("tracker_running") else "🔴 Stopped"
+            tracked_positions = api_health.get("tracked_positions", "Unknown")
+            
+            # Format timestamp if available
+            timestamp_info = ""
+            if api_health.get("timestamp"):
+                try:
+                    # Parse ISO timestamp and format it nicely
+                    from datetime import datetime
+                    timestamp = datetime.fromisoformat(api_health["timestamp"].replace('Z', '+00:00'))
+                    timestamp_info = f"\nLast Update: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                except Exception:
+                    timestamp_info = f"\nLast Update: {api_health['timestamp']}"
+            
+            status_message = (
+                "📊 *Bot Status*\n\n"
+                f"Bot: 🟢 Online\n"
+                f"API Server: {api_status}\n"
+                f"Position Tracker: {tracker_status}\n"
+                f"Tracked Positions: {tracked_positions}\n"
+                f"Endpoint: `{settings.API_BASE_URL}`\n"
+                f"Authorized Users: {len(self.auth.authenticated_users)}"
+                f"{timestamp_info}"
+            )
         elif api_health["status"] == "error":
             api_status = f"🔴 {api_health['message']}"
+            status_message = (
+                "📊 *Bot Status*\n\n"
+                f"Bot: 🟢 Online\n"
+                f"API Server: {api_status}\n"
+                f"Endpoint: `{settings.API_BASE_URL}`\n"
+                f"Authorized Users: {len(self.auth.authenticated_users)}"
+            )
         else:
-            api_status = f"🟡 {api_health['status']}"
-        
-        status_message = (
-            "📊 *Bot Status*\n\n"
-            f"Bot: 🟢 Online\n"
-            f"API Server: {api_status}\n"
-            f"Endpoint: `{settings.API_BASE_URL}`\n"
-            f"Authorized Users: {len(self.auth.authenticated_users)}"
-        )
+            # Handle unhealthy status
+            api_status = f"🟡 {api_health.get('server_status', api_health['status'])}"
+            
+            # Format timestamp if available
+            timestamp_info = ""
+            if api_health.get("timestamp"):
+                try:
+                    from datetime import datetime
+                    timestamp = datetime.fromisoformat(api_health["timestamp"].replace('Z', '+00:00'))
+                    timestamp_info = f"\nLast Update: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                except Exception:
+                    timestamp_info = f"\nLast Update: {api_health['timestamp']}"
+            
+            status_message = (
+                "📊 *Bot Status*\n\n"
+                f"Bot: 🟢 Online\n"
+                f"API Server: {api_status} ({api_health['response_time']:.2f}s)\n"
+                f"Endpoint: `{settings.API_BASE_URL}`\n"
+                f"Authorized Users: {len(self.auth.authenticated_users)}"
+                f"{timestamp_info}"
+            )
         
         await update.message.reply_text(status_message, parse_mode="Markdown")
     
@@ -318,7 +312,7 @@ class CommandHandlers(BaseHandler):
             return
         
         # Sort positions by current PnL percentage (highest first)
-        positions.sort(key=lambda x: x.get("current_pnl_percent", 0), reverse=True)
+        positions.sort(key=lambda x: x.get("current_pnl_percentage", 0), reverse=True)
         
         # Pagination settings
         positions_per_page = 5
@@ -337,36 +331,70 @@ class CommandHandlers(BaseHandler):
         
         for i, pos in enumerate(positions[start_idx:end_idx], start_idx + 1):
             token_mint = pos.get("token_mint", "Unknown")
-            current_pnl = pos.get("current_pnl", 0)
-            current_pnl_percent = pos.get("current_pnl_percent", 0)
-            highest_pnl_percent = pos.get("highest_pnl_percent", 0)
-            hold_duration = pos.get("hold_duration", "Unknown")
-            signature = pos.get("signature", "")
+            token_name = pos.get("token_name", "Unknown")
+            token_symbol = pos.get("token_symbol", "")
+            current_pnl_amount = pos.get("current_pnl_amount", 0)
+            current_pnl_percentage = pos.get("current_pnl_percentage", 0)
+            highest_pnl_percentage = pos.get("highest_pnl_percentage", 0)
+            trade_time = pos.get("trade_time", "")
+            
+            # Calculate hold duration from trade_time
+            hold_duration = "Unknown"
+            if trade_time:
+                try:
+                    trade_dt = datetime.fromisoformat(trade_time.replace('Z', '+00:00'))
+                    now = datetime.now(trade_dt.tzinfo)
+                    duration = now - trade_dt
+                    # Convert seconds to readable format
+                    total_seconds = int(duration.total_seconds())
+                    
+                    if total_seconds < 60:
+                        hold_duration = f"{total_seconds}s"
+                    elif total_seconds < 3600:
+                        minutes = total_seconds // 60
+                        seconds = total_seconds % 60
+                        if seconds > 0:
+                            hold_duration = f"{minutes}m {seconds}s"
+                        else:
+                            hold_duration = f"{minutes}m"
+                    else:
+                        hours = total_seconds // 3600
+                        remaining_seconds = total_seconds % 3600
+                        minutes = remaining_seconds // 60
+                        seconds = remaining_seconds % 60
+                        
+                        parts = [f"{hours}h"]
+                        if minutes > 0:
+                            parts.append(f"{minutes}m")
+                        if seconds > 0 and hours == 0:  # Only show seconds if less than an hour
+                            parts.append(f"{seconds}s")
+                        
+                        hold_duration = " ".join(parts)
+                except Exception:
+                    hold_duration = "Unknown"
             
             # Format PnL with color indicator
-            if current_pnl_percent > 0:
+            if current_pnl_percentage > 0:
                 pnl_emoji = "🟢"
                 pnl_sign = "+"
-            elif current_pnl_percent < 0:
+            elif current_pnl_percentage < 0:
                 pnl_emoji = "🔴"
                 pnl_sign = ""
             else:
                 pnl_emoji = "⚪"
                 pnl_sign = ""
             
-            # Create explorer link for buy transaction
-            tx_display = ""
-            if signature:
-                explorer_link = format_tx_link(signature)
-                tx_display = f"├ Buy TX: [{truncate_address(signature)}]({explorer_link})\n"
+            # Format token display name
+            token_display = token_name
+            if token_symbol:
+                token_display = f"{token_name} ({token_symbol})"
             
             message += (
-                f"*{i}. {truncate_address(token_mint)}*\n"
+                f"*{i}. {token_display}*\n"
                 f"├ Token: `{token_mint}`\n"
-                f"{tx_display}"
-                f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percent:.2f}% ({pnl_sign}{format_price(current_pnl)} SOL)\n"
-                f"├ Peak PnL: {highest_pnl_percent:.2f}%\n"
-                f"└ Duration: {format_duration(hold_duration)}\n\n"
+                f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percentage:.2f}%\n"
+                f"├ Peak PnL: {highest_pnl_percentage:.2f}%\n"
+                f"└ Duration: {hold_duration}\n\n"
             )
             
             # Add sell button for this position
@@ -382,13 +410,13 @@ class CommandHandlers(BaseHandler):
             ])
         
         # Add summary
-        total_pnl = sum(pos.get("current_pnl", 0) for pos in positions)
+        total_pnl = sum(pos.get("current_pnl_amount", 0) for pos in positions)
         total_pnl_sign = "+" if total_pnl > 0 else ""
         
         message += (
             f"*Summary:*\n"
             f"Total Positions: {total_positions}\n"
-            f"Total PnL: {total_pnl_sign}{format_price(total_pnl)} SOL"
+            # f"Total PnL: {total_pnl_sign}{format_price(total_pnl)} SOL"
         )
         
         # Create pagination keyboard
@@ -475,59 +503,20 @@ class CommandHandlers(BaseHandler):
             parse_mode="Markdown"
         )
         
-        # Retry logic
-        max_retries = 3
-        retry_delay = 1  # seconds
-        result = None
+        # Execute sell (single attempt, no retry)
+        result = await self.api.sell_position(token_mint)
         
-        for attempt in range(max_retries):
-            # Update status if retrying
-            if attempt > 0:
-                await status_msg.edit_text(
-                    f"🔄 *Selling Position*\n"
-                    f"Token: `{token_mint}`\n"
-                    f"Retrying... (Attempt {attempt + 1}/{max_retries})",
-                    parse_mode="Markdown"
-                )
-                # Wait before retry
-                await asyncio.sleep(retry_delay)
-            
-            # Execute sell
-            result = await self.api.sell_position(token_mint)
-            
-            # If successful, break out of retry loop
-            if result["success"]:
-                break
-                
-            # If this is the last attempt, continue to show error
-            if attempt == max_retries - 1:
-                break
-                
-            # Log retry attempt
-            logger.warning(f"Sell attempt {attempt + 1} failed for {token_mint}: {result.get('error', 'Unknown error')}")
-        
+        # Update with simplified result
         if result["success"]:
-            tx_hash = result.get('signature', 'N/A')
-            
-            # Create explorer link
-            tx_display = tx_hash
-            if tx_hash != 'N/A':
-                explorer_link = format_tx_link(tx_hash)
-                tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
-            
             await status_msg.edit_text(
-                f"✅ *Position sold successfully*\n\n"
-                f"*Token:* `{token_mint}`\n"
-                f"*Transaction:* {tx_display}\n\n"
-                f"_Use the 🔄 Refresh button to update the positions list_",
-                parse_mode="Markdown",
-                disable_web_page_preview=True
+                f"✅ *Sell request sent*\n"
+                f"*Token:* `{token_mint}`",
+                parse_mode="Markdown"
             )
         else:
             await status_msg.edit_text(
-                f"❌ *Sell Failed!*\n\n"
-                f"*Token:* `{token_mint}`\n"
-                f"*Error:* {result['error']}",
+                f"❌ *An error occurred*\n"
+                f"*Token:* `{token_mint}`",
                 parse_mode="Markdown"
             )
 
@@ -559,59 +548,20 @@ class CallbackHandlers(BaseHandler):
             parse_mode="Markdown"
         )
         
-        # Retry logic
-        max_retries = 3
-        retry_delay = 1  # seconds
-        result = None
+        # Execute sell (single attempt, no retry)
+        result = await self.api.sell_position(token_mint)
         
-        for attempt in range(max_retries):
-            # Update status if retrying
-            if attempt > 0:
-                await status_msg.edit_text(
-                    f"🔄 *Selling Position*\n"
-                    f"Token: `{token_mint}`\n"
-                    f"Retrying... (Attempt {attempt + 1}/{max_retries})",
-                    parse_mode="Markdown"
-                )
-                # Wait before retry
-                await asyncio.sleep(retry_delay)
-            
-            # Execute sell using the API client
-            result = await self.api.sell_position(token_mint)
-            
-            # If successful, break out of retry loop
-            if result["success"]:
-                break
-                
-            # If this is the last attempt, continue to show error
-            if attempt == max_retries - 1:
-                break
-                
-            # Log retry attempt
-            logger.warning(f"Sell attempt {attempt + 1} failed for {token_mint}: {result.get('error', 'Unknown error')}")
-        
+        # Update with simplified result
         if result["success"]:
-            tx_hash = result.get('signature', 'N/A')
-            
-            # Create explorer link
-            tx_display = tx_hash
-            if tx_hash != 'N/A':
-                explorer_link = format_tx_link(tx_hash)
-                tx_display = f"[{truncate_address(tx_hash)}]({explorer_link})"
-            
             await status_msg.edit_text(
-                f"✅ *Position sold successfully*\n\n"
-                f"*Token:* `{token_mint}`\n"
-                f"*Transaction:* {tx_display}\n\n"
-                f"_Use the 🔄 Refresh button to update the positions list_",
-                parse_mode="Markdown",
-                disable_web_page_preview=True
+                f"✅ *Sell request sent*\n"
+                f"*Token:* `{token_mint}`",
+                parse_mode="Markdown"
             )
         else:
             await status_msg.edit_text(
-                f"❌ *Sell Failed!*\n\n"
-                f"*Token:* `{token_mint}`\n"
-                f"*Error:* {result['error']}",
+                f"❌ *An error occurred*\n"
+                f"*Token:* `{token_mint}`",
                 parse_mode="Markdown"
             )
     

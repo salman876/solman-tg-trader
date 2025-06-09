@@ -56,18 +56,29 @@ class APIClient:
             start_time = datetime.now()
             
             async with self.session.get(
-                f"{self.base_url}/health",
+                f"{self.base_url}/api/v1/health",
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 
                 if response.status == 200:
                     data = await response.json()
-                    return {
-                        "status": "healthy",
-                        "response_time": elapsed,
-                        "data": data
-                    }
+                    # Check if the server status is "ok"
+                    if data.get("status") == "ok":
+                        return {
+                            "status": "healthy",
+                            "response_time": elapsed,
+                            "timestamp": data.get("timestamp"),
+                            "tracker_running": data.get("tracker_running"),
+                            "tracked_positions": data.get("tracked_positions")
+                        }
+                    else:
+                        return {
+                            "status": "unhealthy",
+                            "response_time": elapsed,
+                            "server_status": data.get("status"),
+                            "timestamp": data.get("timestamp")
+                        }
                 else:
                     return {
                         "status": "unhealthy",
@@ -114,20 +125,21 @@ class APIClient:
             logger.info(f"Making buy request for token {token_address} by user {username} ({user_id})")
             
             async with self.session.post(
-                f"{self.base_url}/api/buy",
+                f"{self.base_url}/api/v1/buy",
                 json=payload
             ) as response:
-                result = await response.json()
-                
-                if response.status == 200 and result.get("success"):
-                    logger.info(f"Purchase successful for token {token_address}")
-                    return result
+                if response.status == 200:
+                    response_text = await response.text()
+                    logger.info(f"Purchase request successful for token {token_address}: {response_text}")
+                    return {
+                        "success": True,
+                        "message": response_text
+                    }
                 else:
-                    error_msg = result.get("error", f"HTTP {response.status}")
-                    logger.error(f"Purchase failed: {error_msg}")
+                    logger.error(f"Purchase failed with status {response.status} for token {token_address}")
                     return {
                         "success": False,
-                        "error": error_msg,
+                        "error": f"HTTP {response.status}",
                         "http_status": response.status
                     }
                     
@@ -167,17 +179,17 @@ class APIClient:
             logger.info("Fetching current positions")
             
             async with self.session.get(
-                f"{self.base_url}/api/positions"
+                f"{self.base_url}/api/v1/positions"
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    # Convert active_trades object to list format
-                    active_trades = data.get("active_trades", {})
-                    positions = list(active_trades.values()) if active_trades else []
-                    logger.info(f"Retrieved {len(positions)} positions")
+                    positions = data.get("positions", [])
+                    count = data.get("count", len(positions))
+                    logger.info(f"Retrieved {count} positions")
                     return {
                         "success": True,
-                        "positions": positions
+                        "positions": positions,
+                        "count": count
                     }
                 else:
                     error_msg = f"HTTP {response.status}"
@@ -231,20 +243,21 @@ class APIClient:
             logger.info(f"Making sell request for token {token_mint}")
             
             async with self.session.post(
-                f"{self.base_url}/api/sell",
+                f"{self.base_url}/api/v1/sell",
                 json=payload
             ) as response:
-                result = await response.json()
-                
-                if response.status == 200 and result.get("success"):
-                    logger.info(f"Sell successful for token {token_mint}")
-                    return result
+                if response.status == 200:
+                    response_text = await response.text()
+                    logger.info(f"Sell request successful for token {token_mint}: {response_text}")
+                    return {
+                        "success": True,
+                        "message": response_text
+                    }
                 else:
-                    error_msg = result.get("error", f"HTTP {response.status}")
-                    logger.error(f"Sell failed: {error_msg}")
+                    logger.error(f"Sell failed with status {response.status} for token {token_mint}")
                     return {
                         "success": False,
-                        "error": error_msg,
+                        "error": f"HTTP {response.status}",
                         "http_status": response.status
                     }
                     
