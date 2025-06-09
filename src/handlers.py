@@ -406,8 +406,22 @@ class CommandHandlers(BaseHandler):
                 f"├ Token: `{token_mint}`\n"
                 f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percentage:.2f}%\n"
                 f"├ Peak PnL: {highest_pnl_percentage:.2f}%\n"
-                f"└ Duration: {hold_duration}\n\n"
             )
+
+            # Add stop loss information if available
+            stop_loss = pos.get("stop_loss", {})
+            if stop_loss and stop_loss.get("active"):
+                sl_type = stop_loss.get("type", "")
+                trigger_price = stop_loss.get("trigger_price", 0)
+                
+                if sl_type == "percentage":
+                    target = stop_loss.get("target_percentage", 0)
+                    message += f"├ Stop Loss: {target}% @ {format_price(trigger_price)} USD/Token\n"
+                elif sl_type == "trailing":
+                    trailing = stop_loss.get("trailing_percent", 0)
+                    message += f"├ Trailing Stop: {trailing}% @ {format_price(trigger_price)} USD/Token\n"
+
+            message += f"└ Duration: {hold_duration}\n\n"
             
             # Add sell button for this position
             position_buttons.append([
