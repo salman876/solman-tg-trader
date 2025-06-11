@@ -338,7 +338,7 @@ class CommandHandlers(BaseHandler):
             token_mint = pos.get("token_mint", "Unknown")
             token_name = pos.get("token_name", "Unknown")
             token_symbol = pos.get("token_symbol", "")
-            current_pnl_amount = pos.get("current_pnl_amount", 0)
+            current_price = pos.get("current_price", 0)
             current_pnl_percentage = pos.get("current_pnl_percentage", 0)
             highest_pnl_percentage = pos.get("highest_pnl_percentage", 0)
             trade_time = pos.get("trade_time", "")
@@ -405,21 +405,18 @@ class CommandHandlers(BaseHandler):
                 f"*{i}. {token_display}*\n"
                 f"├ Token: `{token_mint}`\n"
                 f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percentage:.2f}%\n"
-                f"├ Peak PnL: {highest_pnl_percentage:.2f}%\n"
+                f"├ Entry Price: ${pos.get('entry_price', 0)}\n"
+                f"├ Current Price: ${current_price} *(mcap: ${pos.get('current_market_cap', '0')})*\n"
+                f"├ Peak Price: ${pos.get('highest_price_in_usd', 0)} *(mcap: ${pos.get('highest_market_cap', '0')}, PnL: {highest_pnl_percentage:.2f}%)*\n"
             )
 
             # Add stop loss information if available
             stop_loss = pos.get("stop_loss", {})
-            if stop_loss and stop_loss.get("active"):
-                sl_type = stop_loss.get("type", "")
+            if stop_loss and stop_loss.get("type") != "None":
+                target = stop_loss.get("target_percentage", 0)
                 trigger_price = stop_loss.get("trigger_price", 0)
-                
-                if sl_type == "percentage":
-                    target = stop_loss.get("target_percentage", 0)
-                    message += f"├ Stop Loss: {target}% @ {format_price(trigger_price)} USD/Token\n"
-                elif sl_type == "trailing":
-                    trailing = stop_loss.get("trailing_percent", 0)
-                    message += f"├ Trailing Stop: {trailing}% @ {format_price(trigger_price)} USD/Token\n"
+                sl_type = stop_loss.get("type", "")
+                message += f"├ 🔥 Stop Loss: {sl_type} ({target}%) @ ${trigger_price}\n"
 
             message += f"└ Duration: {hold_duration}\n\n"
             

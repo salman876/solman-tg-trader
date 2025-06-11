@@ -172,14 +172,27 @@ def format_duration(duration_str: str) -> str:
 def format_price(price) -> str:
     """
     Format a price value to avoid scientific notation and show up to 10 decimal places.
+    Also handles special format strings with placeholders like "0.0{4}13051".
     
     Args:
-        price: Price value (float, int, or string)
+        price: Price value (float, int, or string with optional placeholder format)
         
     Returns:
-        Formatted price string like "0.0000001707"
+        Formatted price string
     """
     try:
+        # Check if it's a string with placeholder format
+        if isinstance(price, str) and "{" in price and "}" in price:
+            # Extract the number of zeros and the actual digits
+            parts = price.split("{")
+            prefix = parts[0]
+            rest = parts[1].split("}")
+            zeros_count = int(rest[0])
+            suffix = rest[1]
+            
+            # Reconstruct the actual number
+            return prefix + "0" * zeros_count + suffix
+            
         # Convert to float if it's not already
         if isinstance(price, str):
             price_float = float(price)
