@@ -342,7 +342,9 @@ class CommandHandlers(BaseHandler):
             current_pnl_percentage = pos.get("current_pnl_percentage", 0)
             highest_pnl_percentage = pos.get("highest_pnl_percentage", 0)
             trade_time = pos.get("trade_time", "")
-            
+            amount_in_token = float(pos.get('amount_in_token', 0))
+            supply_percentage = amount_in_token / 1000000000 * 100
+
             # Calculate hold duration from trade_time
             hold_duration = "Unknown"
             if trade_time:
@@ -405,6 +407,7 @@ class CommandHandlers(BaseHandler):
                 f"*{i}. {token_display}*\n"
                 f"├ Token: `{token_mint}`\n"
                 f"├ PnL: {pnl_emoji} {pnl_sign}{current_pnl_percentage:.2f}%\n"
+                f"├ Tokens: {pos.get('amount_in_token', 0)} *({supply_percentage:.2f}%)*\n"
                 f"├ Entry Price: ${pos.get('entry_price', 0)}\n"
                 f"├ Current Price: ${current_price} *(mcap: ${pos.get('current_market_cap', '0')})*\n"
                 f"├ Peak Price: ${pos.get('highest_price_in_usd', 0)} *(mcap: ${pos.get('highest_market_cap', '0')}, PnL: {highest_pnl_percentage:.2f}%)*\n"
