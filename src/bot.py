@@ -43,6 +43,7 @@ class SolanaTelegramBot:
         self.app.add_handler(CommandHandler("positions", self.command_handlers.handle_positions))
         self.app.add_handler(CommandHandler("sell", self.command_handlers.handle_sell_position))
         self.app.add_handler(CommandHandler("admin", self.command_handlers.handle_admin))
+        self.app.add_handler(CommandHandler("wallet", self.command_handlers.handle_wallet))
         
         # Message handler for token detection
         self.app.add_handler(MessageHandler(
@@ -97,6 +98,7 @@ class SolanaTelegramBot:
             BotCommand("status", "Check bot and API status"),
             BotCommand("positions", "View all current positions with PnL"),
             BotCommand("sell", "Sell a position"),
+            BotCommand("wallet", "View wallet balance"),
             BotCommand("admin", "Admin panel (owner only)")
         ]
         

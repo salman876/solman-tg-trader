@@ -546,6 +546,41 @@ class CommandHandlers(BaseHandler):
                 parse_mode="Markdown"
             )
 
+    async def handle_wallet(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /wallet command."""
+        if not self.auth.is_authorized(update.effective_user.id):
+            await MessageHandlers(self.auth)._send_unauthorized_message(update)
+            return
+        
+        # Send loading message
+        loading_msg = await update.message.reply_text("💰 Fetching wallet balance...")
+        
+        # Get wallet balance from API
+        result = await self.api.get_wallet_balance()
+        
+        if not result["success"]:
+            await loading_msg.edit_text(
+                f"❌ Failed to fetch wallet balance: {result.get('error', 'Unknown error')}",
+                parse_mode="Markdown"
+            )
+            return
+        
+        data = result["data"]
+        
+        # Format the message with required fields
+        message = (
+            f"💰 *Wallet Balance*\n\n"
+            f"*{data.get('name')}*\n"
+            f"Amount: {data.get('uiAmount', 0):.9f} {data.get('symbol')}\n"
+            f"Price: ${data.get('priceUsd', 0):.2f}\n"
+            f"Value: ${data.get('valueUsd', 0):.2f}"
+        )
+        
+        await loading_msg.edit_text(
+            message,
+            parse_mode="Markdown"
+        )
+
 
 class CallbackHandlers(BaseHandler):
     """Handles callback queries from inline keyboards."""
