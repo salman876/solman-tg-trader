@@ -232,6 +232,60 @@ class APIClient:
                 "error": f"Unexpected error: {str(e)}"
             }
 
+    async def get_wallet_balance(self) -> Dict[str, any]:
+        """
+        Get wallet balance information from the API.
+        
+        Returns:
+            Dict with wallet balance data or error
+        """
+        if not self.session:
+            return {"success": False, "error": "Client not initialized"}
+        
+        if not self.api_key:
+            return {"success": False, "error": "API key not configured"}
+        
+        try:
+            logger.info("Fetching wallet balance")
+            
+            async with self.session.get(
+                f"{self.base_url}/api/v1/wallet/balance"
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    logger.info(f"Retrieved wallet balance: {data.get('uiAmount')} {data.get('symbol')}")
+                    return {
+                        "success": True,
+                        "data": data
+                    }
+                else:
+                    error_msg = f"HTTP {response.status}"
+                    logger.error(f"Failed to fetch wallet balance: {error_msg}")
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "http_status": response.status
+                    }
+                    
+        except asyncio.TimeoutError:
+            logger.error("Wallet balance request timed out")
+            return {
+                "success": False,
+                "error": "Request timeout"
+            }
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error fetching wallet balance: {e}")
+            return {
+                "success": False,
+                "error": f"Network error: {str(e)}"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error fetching wallet balance: {e}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}"
+            }
+
     async def sell_position(self, token_mint: str) -> Dict[str, any]:
         """
         Sell a position.
