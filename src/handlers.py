@@ -429,10 +429,14 @@ class CommandHandlers(BaseHandler):
                     f"📤 Sell #{i}", 
                     callback_data=f"sell_{token_mint}"
                 ),
+                 InlineKeyboardButton(
+                    f"🗑️ Remove #{i}", 
+                    callback_data=f"remove_{token_mint}"
+                ),
                 InlineKeyboardButton(
                     f"📊 Photon #{i}", 
                     url=format_photon_link(token_mint)
-                )
+                ),
             ])
         
         # Add summary
@@ -623,6 +627,86 @@ class CallbackHandlers(BaseHandler):
             await status_msg.edit_text(
                 f"❌ *An error occurred*\n"
                 f"*Token:* `{token_mint}`",
+                parse_mode="Markdown"
+            )
+    
+    async def handle_remove_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle remove button callbacks from positions list."""
+        query = update.callback_query
+        await query.answer()
+        
+        # Extract token mint from callback data
+        if not query.data.startswith("remove_"):
+            return
+            
+        token_mint = query.data[7:]  # Remove "remove_" prefix
+        
+        # Check authorization
+        if not self.auth.is_authorized(query.from_user.id):
+            await query.answer("Unauthorized", show_alert=True)
+            return
+        
+        # Send confirmation message with buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Yes, Remove", callback_data=f"confirm_remove_{token_mint}"),
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_remove")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.reply_text(
+            f"⚠️ *Confirm Token Removal*\n\n"
+            f"Are you sure you want to remove this token from your positions?\n\n"
+            f"*Token:* `{token_mint}`\n\n"
+            f"⚠️ *This action cannot be undone!*",
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+    
+    async def handle_confirm_remove_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle confirmed remove action."""
+        query = update.callback_query
+        await query.answer()
+        
+        # Check authorization
+        if not self.auth.is_authorized(query.from_user.id):
+            await query.answer("Unauthorized", show_alert=True)
+            return
+        
+        if query.data.startswith("confirm_remove_"):
+            token_mint = query.data[15:]  # Remove "confirm_remove_" prefix
+            
+            # Update message to show processing
+            await query.edit_message_text(
+                f"🔄 *Removing Token*\n"
+                f"Token: `{token_mint}`\n"
+                f"Processing...",
+                parse_mode="Markdown"
+            )
+            
+            # Execute remove (single attempt, no retry)
+            result = await self.api.remove_token(token_mint)
+            
+            # Update with result
+            if result["success"]:
+                await query.edit_message_text(
+                    f"✅ *Token Removed Successfully*\n"
+                    f"*Token:* `{token_mint}`\n\n"
+                    f"{result.get('message', 'Token removed successfully')}",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(
+                    f"❌ *Failed to Remove Token*\n"
+                    f"*Token:* `{token_mint}`\n"
+                    f"*Error:* {result.get('error', 'Unknown error')}",
+                    parse_mode="Markdown"
+                )
+        
+        elif query.data == "cancel_remove":
+            await query.edit_message_text(
+                "❌ *Token removal cancelled.*",
                 parse_mode="Markdown"
             )
     

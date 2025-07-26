@@ -44,6 +44,7 @@ class SolanaTelegramBot:
         self.app.add_handler(CommandHandler("sell", self.command_handlers.handle_sell_position))
         self.app.add_handler(CommandHandler("admin", self.command_handlers.handle_admin))
         self.app.add_handler(CommandHandler("wallet", self.command_handlers.handle_wallet))
+        self.app.add_handler(CommandHandler("remove", self.command_handlers.handle_remove))
         
         # Message handler for token detection
         self.app.add_handler(MessageHandler(
@@ -77,6 +78,18 @@ class SolanaTelegramBot:
             pattern="^sell_"
         ))
         
+        # Remove position handler
+        self.app.add_handler(CallbackQueryHandler(
+            self.callback_handlers.handle_remove_callback,
+            pattern="^remove_"
+        ))
+        
+        # Confirm remove handler
+        self.app.add_handler(CallbackQueryHandler(
+            self.callback_handlers.handle_confirm_remove_callback,
+            pattern="^(confirm_remove_|cancel_remove)"
+        ))
+        
         logger.info("All handlers registered successfully")
     
     async def _post_init(self, application: Application) -> None:
@@ -99,7 +112,8 @@ class SolanaTelegramBot:
             BotCommand("positions", "View all current positions with PnL"),
             BotCommand("sell", "Sell a position"),
             BotCommand("wallet", "View wallet balance"),
-            BotCommand("admin", "Admin panel (owner only)")
+            BotCommand("admin", "Admin panel (owner only)"),
+            BotCommand("remove", "Remove a position")
         ]
         
         try:

@@ -346,3 +346,66 @@ class APIClient:
                 "success": False,
                 "error": f"Unexpected error: {str(e)}"
             }
+
+    async def remove_token(self, token_mint: str) -> Dict[str, any]:
+        """
+        Remove a token from positions.
+        
+        Args:
+            token_mint: Token mint address to remove
+            
+        Returns:
+            Dict with success status and message
+        """
+        if not self.session:
+            return {"success": False, "error": "Client not initialized"}
+        
+        if not self.api_key:
+            return {"success": False, "error": "API key not configured"}
+        
+        payload = {
+            "token_mint": token_mint
+        }
+        
+        try:
+            logger.info(f"Making remove request for token {token_mint}")
+            
+            async with self.session.post(
+                f"{self.base_url}/api/v1/remove-token",
+                json=payload
+            ) as response:
+                if response.status == 200:
+                    response_text = await response.text()
+                    logger.info(f"Remove request successful for token {token_mint}: {response_text}")
+                    return {
+                        "success": True,
+                        "message": response_text
+                    }
+                else:
+                    # For 400 or other error status codes, get the plain text error message
+                    response_text = await response.text()
+                    logger.error(f"Remove failed with status {response.status} for token {token_mint}: {response_text}")
+                    return {
+                        "success": False,
+                        "error": response_text,
+                        "http_status": response.status
+                    }
+                    
+        except asyncio.TimeoutError:
+            logger.error(f"Remove request timed out for token {token_mint}")
+            return {
+                "success": False,
+                "error": "Request timeout - server took too long to respond"
+            }
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error during remove: {e}")
+            return {
+                "success": False,
+                "error": f"Network error: {str(e)}"
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error during remove: {e}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}"
+            }
