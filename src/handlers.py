@@ -585,6 +585,62 @@ class CommandHandlers(BaseHandler):
             parse_mode="Markdown"
         )
 
+    async def handle_remove(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /remove command."""
+        if not self.auth.is_authorized(update.effective_user.id):
+            await MessageHandlers(self.auth)._send_unauthorized_message(update)
+            return
+        
+        # Check if token address was provided
+        if not context.args:  
+            message = (
+                "*To remove a position, use:*\n"
+                "`/remove TOKEN_MINT`\n\n"
+                "Example:\n"
+                f"`/remove 35cNWuWpRkTNAG2KiZDjhpi6QJr92Y3U8Ac6vShZpump`"
+            )
+            
+            await update.message.reply_text(message, parse_mode="Markdown")
+            return
+        
+        # Get token address from command    
+        token_mint = context.args[0]
+        
+        # Validate it's a valid Solana address
+        if not SolanaAddressValidator.is_valid_address(token_mint):
+            await update.message.reply_text(
+                "❌ Invalid token address format.\n\n"
+                "Please provide a valid Solana token mint address.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Send confirmation message 
+        status_msg = await update.message.reply_text(
+            f"🔄 *Removing Position*\n"
+            f"Token: `{token_mint}`\n"
+            f"Processing...",
+            parse_mode="Markdown"
+        )
+
+        # Execute remove (single attempt, no retry)
+        result = await self.api.remove_token(token_mint)
+        
+        # Update with result
+        if result["success"]:
+            await status_msg.edit_text(
+                f"✅ *Token Removed Successfully*\n"
+                f"*Token:* `{token_mint}`\n\n"
+                f"{result.get('message', 'Token removed successfully')}",
+                parse_mode="Markdown"
+            )
+        else:
+            await status_msg.edit_text(
+                f"❌ *Failed to Remove Token*\n"
+                f"*Token:* `{token_mint}`\n"
+                f"*Error:* {result.get('error', 'Unknown error')}",
+                parse_mode="Markdown"
+            )
 
 class CallbackHandlers(BaseHandler):
     """Handles callback queries from inline keyboards."""
